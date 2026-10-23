@@ -1,8 +1,8 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { onAuthStateChanged, User, signInWithPopup, signOut as fbSignOut } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { auth, googleProvider, db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { UserProfile } from '../types';
+
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import type { User } from '@supabase/supabase-js';
+import { supabase } from '../lib/supabase';
+import type { UserProfile } from '../types';
 
 interface AuthContextType {
   currentUser: UserProfile | null;
@@ -15,184 +15,202 @@ interface AuthContextType {
   toggleRole: () => void;
   updateProfile: (data: Partial<UserProfile>) => Promise<void>;
   logout: () => Promise<void>;
+  signUpWithEmail: (name: string, email: string, password: string) => Promise<void>;
+  loginWithEmail: (email: string, password: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Admin email configured for the app
-const ADMIN_EMAILS = ['ruswatai@gmail.com'];
+const ADMIN_EMAILS = ['arashimajubersama@gmail.com'];
+
+function profileFromData(
+  id: string,
+  email: string,
+  data: Record<string, unknown>
+): UserProfile {
+  const isAdmin = ADMIN_EMAILS.includes(email.toLowerCase());
+
+  return {
+    uid: id,
+    name: String(data.full_name || 'Pemain SparringHub'),
+    email,
+    phone: String(data.phone || ''),
+    role: isAdmin && data.role === 'admin' ? 'admin' : 'member',
+    avatarUrl: typeof data.avatar_url === 'string' ? data.avatar_url : undefined,
+    createdAt: String(data.created_at || new Date().toISOString()),
+  };
+}
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
+  const [authUser, setAuthUser] = useState<User | null>(null);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState(true);
 
-  // Set default active user so user can immediately use and test app
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setFirebaseUser(user);
-      if (user) {
-        const isUserAdmin = ADMIN_EMAILS.includes(user.email || '');
-        const userDocRef = doc(db, 'users', user.uid);
-        try {
-          const snap = await getDoc(userDocRef);
-          if (snap.exists()) {
-            const data = snap.data() as UserProfile;
-            setCurrentUser({
-              ...data,
-              role: isUserAdmin ? 'admin' : (data.role || 'member')
-            });
-          } else {
-            const newProfile: UserProfile = {
-              uid: user.uid,
-              name: user.displayName || 'Pemain Arashi',
-              email: user.email || 'user@arashi.id',
-              phone: user.phoneNumber || '+62 812 3456 7890',
-              role: isUserAdmin ? 'admin' : 'member',
-              teamName: 'ARASHI FC',
-              teamId: 'team-arashi',
-              avatarUrl: user.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80',
-              createdAt: new Date().toISOString()
-            };
-            await setDoc(userDocRef, newProfile);
-            setCurrentUser(newProfile);
+  const loadProfile = async (user: User | null) => {
+    setAuthUser(user);
 
-            if (isUserAdmin) {
-              await setDoc(doc(db, 'admins', user.uid), {
-                email: user.email,
-                grantedAt: new Date().toISOString()
-              });
-            }
-          }
-        } catch (err) {
-          console.warn('Error reading user profile from Firestore:', err);
-          // Fallback user state
-          setCurrentUser({
-            uid: user.uid,
-            name: user.displayName || 'Pemain Arashi',
-            email: user.email || 'user@arashi.id',
-            phone: '+62 812 3456 7890',
-            role: isUserAdmin ? 'admin' : 'member',
-            teamName: 'ARASHI FC',
-            teamId: 'team-arashi',
-            avatarUrl: user.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80',
-            createdAt: new Date().toISOString()
-          });
-        }
-      } else {
-        // Default session for fast preview (Pemain Arashi)
-        const savedGuest = localStorage.getItem('arashi_guest_session');
-        if (savedGuest) {
-          try {
-            setCurrentUser(JSON.parse(savedGuest));
-          } catch {
-            setDefaultMember();
-          }
-        } else {
-          setDefaultMember();
-        }
-      }
+    if (!user) {
+      setCurrentUser(null);
       setLoading(false);
+      return;
+    }
+
+    const email = (user.email || '').toLowerCase();
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Gagal memuat profil:', error.message);
+      setCurrentUser(null);
+      setLoading(false);
+      return;
+    }
+
+    if (!data) {
+      const { error: insertError } = await supabase
+        .from('profiles')
+        .insert({
+          id: user.id,
+          full_name: String(user.user_metadata?.full_name || 'Pemain SparringHub'),
+          role: 'member',
+        });
+
+      if (insertError) {
+        console.error('Gagal membuat profil:', insertError.message);
+        setCurrentUser(null);
+        setLoading(false);
+        return;
+      }
+
+      const { data: newProfile, error: reloadError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (reloadError || !newProfile) {
+        setCurrentUser(null);
+        setLoading(false);
+        return;
+      }
+
+      setCurrentUser(profileFromData(user.id, email, newProfile));
+    } else {
+      setCurrentUser(profileFromData(user.id, email, data));
+    }
+
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    let active = true;
+
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!active) return;
+
+      if (error) console.error('Gagal memeriksa sesi:', error.message);
+      void loadProfile(data.session?.user ?? null);
     });
 
-    return () => unsubscribe();
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!active) return;
+
+      const user = session?.user ?? null;
+      setAuthUser(user);
+
+      if (!user) {
+        setCurrentUser(null);
+        setLoading(false);
+        return;
+      }
+
+      // Defer database access outside the auth callback.
+      setTimeout(() => {
+        if (active) void loadProfile(user);
+      }, 0);
+    });
+
+    return () => {
+      active = false;
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
-  const setDefaultMember = () => {
-    const defaultUser: UserProfile = {
-      uid: 'user-dika',
-      name: 'Pemain Arashi',
-      email: 'pemain@arashi.id',
-      phone: '+62 812 3456 7890',
-      role: 'member', // Member by default
-      teamName: 'ARASHI FC',
-      teamId: 'team-arashi',
-      avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80',
-      createdAt: new Date().toISOString()
-    };
-    setCurrentUser(defaultUser);
-    localStorage.setItem('arashi_guest_session', JSON.stringify(defaultUser));
+  const loginWithEmail = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+    if (error) throw error;
+  };
+
+  const signUpWithEmail = async (name: string, email: string, password: string) => {
+    const { error } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+      options: { data: { full_name: name.trim() } },
+    });
+    if (error) throw error;
   };
 
   const loginWithGoogle = async () => {
-    try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.GET, 'auth');
-    }
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: 'https://arashiapp.github.io/arashiapp/',
+      },
+    });
+    if (error) throw error;
   };
 
   const loginAsGuestMember = () => {
-    const memberUser: UserProfile = {
-      uid: 'user-dika',
-      name: 'Pemain Arashi',
-      email: 'pemain@arashi.id',
-      phone: '+62 812 3456 7890',
-      role: 'member',
-      teamName: 'ARASHI FC',
-      teamId: 'team-arashi',
-      avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80',
-      createdAt: new Date().toISOString()
-    };
-    setCurrentUser(memberUser);
-    localStorage.setItem('arashi_guest_session', JSON.stringify(memberUser));
+    throw new Error('Silakan daftar atau login menggunakan email dan kata sandi.');
   };
 
   const loginAsAdmin = () => {
-    const adminUser: UserProfile = {
-      uid: 'admin-super',
-      name: 'Administrator Arashi',
-      email: 'ruswatai@gmail.com',
-      phone: '+62 811 9988 7766',
-      role: 'admin',
-      teamName: 'ARASHI FC',
-      teamId: 'team-arashi',
-      avatarUrl: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=200&q=80',
-      createdAt: new Date().toISOString()
-    };
-    setCurrentUser(adminUser);
-    localStorage.setItem('arashi_guest_session', JSON.stringify(adminUser));
+    throw new Error('Akses admin hanya tersedia untuk akun yang telah diberi izin secara aman.');
   };
 
-  // Fast toggle between Admin Full and Anggota Terbatas to test permissions immediately
   const toggleRole = () => {
-    if (!currentUser) return;
-    const newRole: 'admin' | 'member' = currentUser.role === 'admin' ? 'member' : 'admin';
-    const updated = {
-      ...currentUser,
-      role: newRole,
-      name: newRole === 'admin' ? 'Administrator Arashi' : 'Pemain Arashi'
-    };
-    setCurrentUser(updated);
-    localStorage.setItem('arashi_guest_session', JSON.stringify(updated));
+    throw new Error('Peran tidak dapat diubah dari aplikasi.');
   };
 
-  const updateProfile = async (data: Partial<UserProfile>) => {
-    if (!currentUser) return;
-    const updated: UserProfile = { ...currentUser, ...data };
-    setCurrentUser(updated);
-    localStorage.setItem('arashi_guest_session', JSON.stringify(updated));
-    if (firebaseUser) {
-      try {
-        await setDoc(doc(db, 'users', firebaseUser.uid), updated, { merge: true });
-      } catch (err) {
-        console.error('Failed to sync profile update to Firestore:', err);
-      }
+  const updateProfile = async (changes: Partial<UserProfile>) => {
+    if (!authUser || !currentUser) {
+      throw new Error('Silakan login terlebih dahulu.');
     }
+
+    const updates: Record<string, unknown> = {};
+
+    if (changes.name !== undefined) updates.full_name = changes.name;
+    if (changes.phone !== undefined) updates.phone = changes.phone;
+    if (changes.avatarUrl !== undefined) updates.avatar_url = changes.avatarUrl;
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(updates)
+      .eq('id', authUser.id)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    setCurrentUser(profileFromData(authUser.id, authUser.email || '', data));
   };
 
   const logout = async () => {
-    if (firebaseUser) {
-      await fbSignOut(auth);
-    }
-    setDefaultMember();
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
   };
 
   return (
     <AuthContext.Provider
       value={{
         currentUser,
-        firebaseUser,
+        firebaseUser: authUser,
         loading,
         isAdmin: currentUser?.role === 'admin',
         loginWithGoogle,
@@ -200,7 +218,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loginAsAdmin,
         toggleRole,
         updateProfile,
-        logout
+        logout,
+        signUpWithEmail,
+        loginWithEmail,
       }}
     >
       {children}
@@ -210,8 +230,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };
+              
