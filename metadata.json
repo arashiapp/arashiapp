@@ -1,0 +1,6 @@
+{
+  "name": "Arashi SparringHub",
+  "description": "Platform sparring futsal, mini soccer, dan sepak bola antar kampung dengan sinkronisasi database real-time dan manajemen peran.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,113 @@
+{
+  "entities": {
+    "Match": {
+      "title": "Match",
+      "description": "Sparring match details, location, status, and teams",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 100 },
+        "type": { "type": "string", "enum": ["futsal", "mini_soccer", "antar_kampung"] },
+        "format": { "type": "string", "maxLength": 30 },
+        "date": { "type": "string", "maxLength": 50 },
+        "location": { "type": "string", "maxLength": 100 },
+        "level": { "type": "string", "maxLength": 50 },
+        "description": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["terbuka", "penuh", "selesai", "dibatalkan"] },
+        "targetTeams": { "type": "number" },
+        "currentTeams": { "type": "number" },
+        "teams": { "type": "array" },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "creatorName": { "type": "string", "maxLength": 100 },
+        "creatorPhone": { "type": "string", "maxLength": 30 },
+        "imageUrl": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["title", "type", "location", "status", "createdBy"]
+    },
+    "Team": {
+      "title": "Team",
+      "description": "Sparring team profile, members, and city",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "city": { "type": "string", "maxLength": 100 },
+        "captainId": { "type": "string", "maxLength": 128 },
+        "captainName": { "type": "string", "maxLength": 100 },
+        "captainPhone": { "type": "string", "maxLength": 30 },
+        "category": { "type": "string", "maxLength": 50 },
+        "membersCount": { "type": "number" },
+        "members": { "type": "array" },
+        "stats": { "type": "object" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["name", "city", "captainId", "captainName"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Real-time updates notification for matches, teams, and broadcasts",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 120 },
+        "message": { "type": "string", "maxLength": 500 },
+        "type": { "type": "string", "maxLength": 50 },
+        "relatedMatchId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "readBy": { "type": "array" }
+      },
+      "required": ["title", "message", "type"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Direct and match sparring chat message",
+      "type": "object",
+      "properties": {
+        "channelId": { "type": "string", "maxLength": 128 },
+        "senderId": { "type": "string", "maxLength": 128 },
+        "senderName": { "type": "string", "maxLength": 100 },
+        "text": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["channelId", "senderId", "senderName", "text"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile with role authorization",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "maxLength": 100 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "role": { "type": "string", "enum": ["admin", "member"] },
+        "teamName": { "type": "string", "maxLength": 100 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name", "role"]
+    }
+  },
+  "firestore": {
+    "/matches/{matchId}": {
+      "schema": "Match",
+      "description": "Sparring matches collection"
+    },
+    "/teams/{teamId}": {
+      "schema": "Team",
+      "description": "Sparring teams collection"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "System and data update notifications"
+    },
+    "/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Sparring chat messages"
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile data"
+    }
+  }
+}

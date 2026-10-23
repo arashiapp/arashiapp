@@ -1,0 +1,81 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (request.auth.token.email == 'ruswatai@gmail.com' && request.auth.token.email_verified == true)
+      );
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Test connection doc
+    match /test/{docId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // Admins registry
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // User profiles
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Sparring matches
+    match /matches/{matchId} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        isAdmin() || 
+        resource.data.createdBy == request.auth.uid ||
+        // Allow members to join/leave (updating teams and currentTeams and status)
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teams', 'currentTeams', 'status', 'updatedAt'])
+      );
+      allow delete: if isSignedIn() && (isAdmin() || resource.data.createdBy == request.auth.uid);
+    }
+
+    // Teams
+    match /teams/{teamId} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (isAdmin() || resource.data.captainId == request.auth.uid || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'membersCount', 'updatedAt']));
+      allow delete: if isSignedIn() && (isAdmin() || resource.data.captainId == request.auth.uid);
+    }
+
+    // Real-time notifications for every data update
+    match /notifications/{notificationId} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // Chat messages for sparring
+    match /messages/{messageId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin() || (isSignedIn() && resource.data.senderId == request.auth.uid);
+    }
+  }
+}
