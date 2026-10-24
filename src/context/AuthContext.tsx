@@ -46,6 +46,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  
   const loadProfile = async (user: User | null) => {
     setAuthUser(user);
 
@@ -55,54 +56,68 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    const email = (user.email || '').toLowerCase();
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .maybeSingle();
+    setLoading(true);
 
-    if (error) {
-      console.error('Gagal memuat profil:', error.message);
-      setCurrentUser(null);
-      setLoading(false);
-      return;
-    }
+    try {
+      const email = (user.email || '').toLowerCase();
 
-    if (!data) {
-      const { error: insertError } = await supabase
-        .from('profiles')
-        .insert({
-          id: user.id,
-          full_name: String(user.user_metadata?.full_name || 'Pemain SparringHub'),
-          role: 'member',
-        });
-
-      if (insertError) {
-        console.error('Gagal membuat profil:', insertError.message);
-        setCurrentUser(null);
-        setLoading(false);
-        return;
-      }
-
-      const { data: newProfile, error: reloadError } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
-        .single();
+        .maybeSingle();
 
-      if (reloadError || !newProfile) {
-        setCurrentUser(null);
-        setLoading(false);
-        return;
+      if (error) throw error;
+
+      let profileData = data;
+
+      if (!profileData) {
+        const { error: insertError } = await supabase
+          .from('profiles')
+          .insert({
+            id: user.id,
+            full_name: String(
+              user.user_metadata?.full_name || 'Pemain SparringHub'
+            ),
+            role: 'member',
+          });
+
+        if (insertError) {
+          const { data: existingProfile, error: reloadError } =
+            await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', user.id)
+              .maybeSingle();
+
+          if (reloadError) throw reloadError;
+          if (!existingProfile) throw insertError;
+
+          profileData = existingProfile;
+        } else {
+          const { data: newProfile, error: reloadError } =
+            await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', user.id)
+              .maybeSingle();
+
+          if (reloadError) throw reloadError;
+          if (!newProfile) {
+            throw new Error('Profil belum tersedia setelah dibuat.');
+          }
+
+          profileData = newProfile;
+        }
       }
 
-      setCurrentUser(profileFromData(user.id, email, newProfile));
-    } else {
-      setCurrentUser(profileFromData(user.id, email, data));
+      setCurrentUser(profileFromData(user.id, email, profileData));
+    } catch (error) {
+      console.error('Gagal memuat profil:', error);
+      setCurrentUser(null);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   useEffect(() => {
