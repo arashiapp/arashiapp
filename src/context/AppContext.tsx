@@ -60,8 +60,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [hasInitializedListener, setHasInitializedListener] = useState(false);
 
   // Real-time synchronization with Firestore
-  useEffect(() => {
-    // 1. Matches real-time listener
+useEffect(() => {
+  if (!currentUser) return;
+
+  // 1. Matches real-time listener
     const matchesRef = collection(db, 'matches');
     const unsubMatches = onSnapshot(
       matchesRef,
@@ -196,7 +198,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubSupabaseNotifs();
       unsubSupabaseMessages();
     };
-  }, [hasInitializedListener]);
+  }, [currentUser?.uid, hasInitializedListener]);
 
   // Seed Firestore if brand new database
   const seedInitialData = async () => {
