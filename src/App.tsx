@@ -21,8 +21,30 @@ import { RealtimeToastBanner } from './components/RealtimeToastBanner';
 import { MoreMenuModal } from './components/MoreMenuModal';
 import { InstallAppModal } from './components/InstallAppModal';
 
+
 function MainAppContent() {
-  const { currentUser, isAdmin } = useAuth();
+  const { currentUser, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0c0f17] text-gray-100 flex items-center justify-center">
+        Memeriksa sesi login...
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return <LandingScreen onEnterApp={() => {}} />;
+  }
+
+  return (
+  <AppProvider>
+    <AuthenticatedAppContent />
+  </AppProvider>
+);
+}
+
+function AuthenticatedAppContent() {
   const { activeToast, dismissToast } = useApp();
 
   const [activeTab, setActiveTab] = useState<NavTab>('beranda');
@@ -32,13 +54,11 @@ function MainAppContent() {
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
   const [moreMenuSection, setMoreMenuSection] = useState<string | null>(null);
   const [showMyTeamModal, setShowMyTeamModal] = useState(false);
-  const [chatChannelTarget, setChatChannelTarget] = useState<{ id: string; name: string } | null>(null);
-  const [hasEnteredApp, setHasEnteredApp] = useState(true);
+  const [chatChannelTarget, setChatChannelTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
-  // If user wants to see landing page
-  if (!hasEnteredApp) {
-    return <LandingScreen onEnterApp={() => setHasEnteredApp(true)} />;
-  }
 
   const handleOpenMoreSection = (section: string) => {
     setMoreMenuSection(section);
