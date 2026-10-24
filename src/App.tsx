@@ -193,12 +193,11 @@ function AuthenticatedAppContent() {
   );
 }
 
+
 export default function App() {
   return (
     <AuthProvider>
-      <AppProvider>
-        <MainAppContent />
-      </AppProvider>
+      <MainAppContent />
     </AuthProvider>
   );
 }
