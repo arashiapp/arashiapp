@@ -48,4 +48,4 @@ jobs:
           name: sparringhub-preview
           path: dist/
           if-no-files-found: error
-          retention-days: 3
+          retention-days: 4
