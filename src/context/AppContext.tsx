@@ -740,4 +740,83 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
         readBy: [...currentReadBy, uid]
       });
     } catch (error) {
-      console.warn('Gagal menandai notifikasi sudah dibaca:', err
+      console.warn('Gagal menandai notifikasi sudah dibaca:', error);
+    }
+  };
+
+  // Mark all notifications as read.
+  const markAllNotificationsAsRead = async () => {
+    const uid = currentUser?.uid || 'anonymous';
+
+    for (const notification of notifications) {
+      if (!notification.readBy?.includes(uid)) {
+        try {
+          await updateDoc(doc(db, 'notifications', notification.id), {
+            readBy: [...(notification.readBy || []), uid]
+          });
+        } catch (error) {
+          console.warn('Gagal memperbarui status notifikasi:', error);
+        }
+      }
+    }
+  };
+
+  // Clear all notifications.
+  const clearAllNotifications = async () => {
+    if (!isAdmin) return;
+
+    for (const notification of notifications) {
+      try {
+        await deleteDoc(doc(db, 'notifications', notification.id));
+      } catch (error) {
+        console.warn('Gagal menghapus notifikasi:', error);
+      }
+    }
+  };
+
+  const unreadNotificationsCount = notifications.filter(
+    (notification) =>
+      !(notification.readBy || []).includes(currentUser?.uid || '')
+  ).length;
+
+  return (
+    <AppContext.Provider
+      value={{
+        matches,
+        teams,
+        notifications,
+        messages,
+        venues,
+        tournaments,
+        unreadNotificationsCount,
+        activeToast,
+        dismissToast,
+        createMatch,
+        joinMatch,
+        leaveMatch,
+        updateMatchStatus,
+        deleteMatch,
+        myTeam,
+        updateTeam,
+        addTeamMember,
+        sendMessage,
+        sendNotification,
+        markNotificationAsRead,
+        markAllNotificationsAsRead,
+        clearAllNotifications
+      }}
+    >
+      {children}
+    </AppContext.Provider>
+  );
+};
+
+export const useApp = () => {
+  const context = useContext(AppContext);
+
+  if (!context) {
+    throw new Error('useApp must be used within an AppProvider');
+  }
+
+  return context;
+};
