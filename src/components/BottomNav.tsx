@@ -1,22 +1,50 @@
-import React from 'react';
-import { Home, Search, PlusCircle, MessageSquare, User } from 'lucide-react';
-import { useApp } from '../context/AppContext';
 
-export type NavTab = 'beranda' | 'cari' | 'buat' | 'pesan' | 'profil';
+import React from 'react';
+import {
+  Home,
+  Search,
+  PlusCircle,
+  MessageSquare,
+  User,
+  ShieldCheck,
+} from 'lucide-react';
+import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
+
+export type NavTab =
+  | 'beranda'
+  | 'cari'
+  | 'buat'
+  | 'pesan'
+  | 'profil';
 
 interface BottomNavProps {
   activeTab: NavTab;
   onChangeTab: (tab: NavTab) => void;
 }
 
-export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onChangeTab }) => {
+export const BottomNav: React.FC<BottomNavProps> = ({
+  activeTab,
+  onChangeTab,
+}) => {
   const { messages } = useApp();
+  const { isAdmin } = useAuth();
 
   const navItems = [
     { id: 'beranda' as NavTab, label: 'Beranda', icon: Home },
     { id: 'cari' as NavTab, label: 'Cari', icon: Search },
-    { id: 'buat' as NavTab, label: 'Buat', icon: PlusCircle, highlight: true },
-    { id: 'pesan' as NavTab, label: 'Pesan', icon: MessageSquare, badge: messages.length > 0 ? messages.length : undefined },
+    {
+      id: 'buat' as NavTab,
+      label: 'Buat',
+      icon: PlusCircle,
+      highlight: true,
+    },
+    {
+      id: 'pesan' as NavTab,
+      label: 'Pesan',
+      icon: MessageSquare,
+      badge: messages.length > 0 ? messages.length : undefined,
+    },
     { id: 'profil' as NavTab, label: 'Profil', icon: User },
   ];
 
@@ -36,14 +64,27 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onChangeTab }) 
                   ? 'text-white'
                   : 'text-gray-400 hover:text-gray-200'
               }`}
+              aria-current={isActive ? 'page' : undefined}
             >
               <div className="relative">
-                <Icon className={`w-5 h-5 transition-transform ${isActive ? 'scale-110 stroke-[2.4]' : 'stroke-[1.8]'}`} />
+                <Icon
+                  className={`w-5 h-5 transition-transform ${
+                    isActive
+                      ? 'scale-110 stroke-[2.4]'
+                      : 'stroke-[1.8]'
+                  }`}
+                />
                 {item.badge && item.id === 'pesan' && (
                   <span className="absolute -top-1 -right-2 w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
                 )}
               </div>
-              <span className={`text-[10px] mt-1 font-medium ${isActive ? 'text-white font-bold' : 'text-gray-400'}`}>
+              <span
+                className={`text-[10px] mt-1 font-medium ${
+                  isActive
+                    ? 'text-white font-bold'
+                    : 'text-gray-400'
+                }`}
+              >
                 {item.label}
               </span>
               {isActive && (
@@ -53,6 +94,13 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onChangeTab }) 
           );
         })}
       </div>
+
+      {isAdmin && (
+        <div className="text-center text-[9px] text-amber-400 pb-0.5">
+          <ShieldCheck className="inline w-3 h-3 mr-1" />
+          MODE ADMIN
+        </div>
+      )}
     </nav>
   );
 };

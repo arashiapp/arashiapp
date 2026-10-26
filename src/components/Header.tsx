@@ -1,5 +1,6 @@
+
 import React from 'react';
-import { Bell, ShieldAlert, Sparkles, UserCheck, Smartphone } from 'lucide-react';
+import { Bell, ShieldAlert, UserCheck, Smartphone } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
 
@@ -9,23 +10,22 @@ interface HeaderProps {
   onOpenInstallModal: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ 
-  onOpenNotifications, 
+export const Header: React.FC<HeaderProps> = ({
+  onOpenNotifications,
   onOpenMoreMenu,
   onOpenInstallModal
 }) => {
-  const { currentUser, isAdmin, toggleRole } = useAuth();
+  const { isAdmin } = useAuth();
   const { unreadNotificationsCount } = useApp();
 
   return (
     <header className="sticky top-0 z-40 bg-[#0c0f17]/95 backdrop-blur-md border-b border-gray-800/80 px-4 py-3">
-      {/* Admin / Member Role Banner Switcher */}
       <div className="flex items-center justify-between pb-2 mb-2 border-b border-gray-800/50 text-xs">
         <div className="flex items-center gap-1.5">
           {isAdmin ? (
             <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-semibold border border-amber-500/40">
               <ShieldAlert className="w-3.5 h-3.5" />
-              AKSES ADMIN FULL
+              AKSES ADMIN
             </span>
           ) : (
             <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 font-semibold border border-blue-500/40">
@@ -35,33 +35,24 @@ export const Header: React.FC<HeaderProps> = ({
           )}
           <span className="text-gray-400 hidden sm:inline">• Sinkron Real-time</span>
         </div>
-
-        <button
-          onClick={toggleRole}
-          className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-gray-800/90 hover:bg-gray-700 text-gray-200 transition-colors border border-gray-700"
-          title="Klik untuk beralih mode izin Admin / Anggota"
-        >
-          <Sparkles className="w-3 h-3 text-emerald-400" />
-          <span>Ganti Peran: <strong className="text-white">{isAdmin ? 'Admin' : 'Anggota'}</strong></span>
-        </button>
       </div>
 
-      {/* Main Bar */}
       <div className="flex items-center justify-between">
-        {/* Logo matching screenshot: Stylized 'A' + ARASHI SPARRINGHUB */}
-        <div className="flex items-center gap-2 cursor-pointer" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+        <button
+          type="button"
+          className="flex items-center gap-2 text-left"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          aria-label="Kembali ke atas"
+        >
           <div className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-gray-100 to-gray-300 text-black font-extrabold tracking-tighter shadow-md">
             <span className="text-xl font-black italic">A</span>
           </div>
-          <div className="flex flex-col">
-            <div className="flex items-center gap-1 leading-none">
-              <span className="font-extrabold tracking-wider text-base text-white">ARASHI</span>
-            </div>
-            <span className="text-[9px] font-semibold tracking-widest text-gray-400 uppercase leading-none">SPARRINGHUB</span>
-          </div>
-        </div>
+          <span className="flex flex-col">
+            <span className="font-extrabold tracking-wider text-base text-white leading-none">ARASHI</span>
+            <span className="text-[9px] font-semibold tracking-widest text-gray-400 uppercase leading-none mt-1">SPARRINGHUB</span>
+          </span>
+        </button>
 
-        {/* Right actions: Install App (APK) button + Notification Bell with Badge */}
         <div className="flex items-center gap-2">
           <button
             onClick={onOpenInstallModal}

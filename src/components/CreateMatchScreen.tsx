@@ -1,14 +1,15 @@
+
 import React, { useState } from 'react';
-import { 
-  ArrowLeft, 
-  CircleDot, 
-  Trophy, 
-  Users, 
-  Calendar, 
-  MapPin, 
-  FileText,
-  CheckCircle,
-  Loader2
+import {
+  ArrowLeft,
+  CircleDot,
+  Trophy,
+  Users,
+  Calendar,
+  MapPin,
+  ExternalLink,
+  Loader2,
+  Navigation
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
@@ -19,7 +20,10 @@ interface CreateMatchScreenProps {
   onSuccess: (matchId: string) => void;
 }
 
-export const CreateMatchScreen: React.FC<CreateMatchScreenProps> = ({ onBack, onSuccess }) => {
+export const CreateMatchScreen: React.FC<CreateMatchScreenProps> = ({
+  onBack,
+  onSuccess
+}) => {
   const { createMatch, myTeam, venues } = useApp();
   const { currentUser } = useAuth();
 
@@ -27,51 +31,130 @@ export const CreateMatchScreen: React.FC<CreateMatchScreenProps> = ({ onBack, on
   const [title, setTitle] = useState('');
   const [dateTime, setDateTime] = useState('');
   const [location, setLocation] = useState('');
+  const [coordinates, setCoordinates] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+  const [locationMessage, setLocationMessage] = useState<string | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
   const [description, setDescription] = useState('');
   const [teamCount, setTeamCount] = useState<number>(1);
   const [level, setLevel] = useState('Bebas');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Type definitions matching screenshot
   const matchTypes = [
     {
       id: 'futsal' as MatchType,
       title: 'Futsal',
       format: '5 vs 5',
       icon: CircleDot,
-      defaultImage: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&w=800&q=80'
+      defaultImage:
+        'https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&w=800&q=80'
     },
     {
       id: 'mini_soccer' as MatchType,
       title: 'Mini Soccer',
       format: '7 vs 7',
       icon: Trophy,
-      defaultImage: 'https://images.unsplash.com/photo-1529900748604-07564a03e7a6?auto=format&fit=crop&w=800&q=80'
+      defaultImage:
+        'https://images.unsplash.com/photo-1529900748604-07564a03e7a6?auto=format&fit=crop&w=800&q=80'
     },
     {
       id: 'antar_kampung' as MatchType,
       title: 'Antar Kampung',
       format: '11 vs 11',
       icon: Users,
-      defaultImage: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&w=800&q=80'
+      defaultImage:
+        'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&w=800&q=80'
     }
   ];
 
-  const currentTypeConfig = matchTypes.find((t) => t.id === selectedType)!;
+  const currentTypeConfig = matchTypes.find(
+    (type) => type.id === selectedType
+  )!;
+
+  const getLocalDateTime = () => {
+    const now = new Date();
+    const local = new Date(
+      now.getTime() - now.getTimezoneOffset() * 60000
+    );
+    return local.toISOString().slice(0, 16);
+  };
+
+  const openGoogleMaps = () => {
+    const query = coordinates
+      ? `${coordinates.lat},${coordinates.lng}`
+      : location.trim();
+
+    if (!query) {
+      setLocationMessage(
+        'Pilih atau tulis lokasi lapangan terlebih dahulu.'
+      );
+      return;
+    }
+
+    window.open(
+      `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`,
+      '_blank',
+      'noopener,noreferrer'
+    );
+  };
+
+  const useCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationMessage(
+        'Browser ini tidak mendukung GPS. Silakan cari lokasi melalui Google Maps.'
+      );
+      return;
+    }
+
+    setIsLocating(true);
+    setLocationMessage('Meminta izin lokasi perangkat…');
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+
+        setCoordinates({ lat, lng });
+        setLocation(`Lokasi GPS (${lat.toFixed(6)}, ${lng.toFixed(6)})`);
+        setLocationMessage(
+          'Koordinat GPS berhasil diambil dan siap disimpan.'
+        );
+        setIsLocating(false);
+      },
+      (err) => {
+        setLocationMessage(
+          err.code === err.PERMISSION_DENIED
+            ? 'Izin lokasi ditolak. Aktifkan izin lokasi browser atau pilih lokasi secara manual.'
+            : 'Lokasi belum berhasil diambil. Pastikan GPS aktif lalu coba lagi.'
+        );
+        setIsLocating(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 30000
+      }
+    );
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!title.trim()) {
       setError('Harap masukkan judul pertandingan');
       return;
     }
+
     if (!dateTime.trim()) {
-      setError('Harap masukkan tanggal & waktu');
+      setError('Harap masukkan tanggal dan waktu');
       return;
     }
+
     if (!location.trim()) {
-      setError('Harap masukkan lokasi / lapangan');
+      setError('Harap masukkan lokasi atau lapangan');
       return;
     }
 
@@ -90,14 +173,21 @@ export const CreateMatchScreen: React.FC<CreateMatchScreenProps> = ({ onBack, on
         }
       ];
 
+      // Simpan koordinat GPS di dalam teks lokasi apabila tersedia.
+      // Jika GPS tidak tersedia, simpan lokasi manual seperti biasa.
+      const savedLocation = coordinates
+        ? `${location.trim()} [Koordinat: ${coordinates.lat.toFixed(6)}, ${coordinates.lng.toFixed(6)}]`
+        : location.trim();
+
       const matchId = await createMatch({
         title: title.trim(),
         type: selectedType,
         format: currentTypeConfig.format,
         date: dateTime.trim(),
-        location: location.trim(),
+        location: savedLocation,
         level: level,
-        description: description.trim() || 'Pertandingan sparring persahabatan.',
+        description:
+          description.trim() || 'Pertandingan sparring persahabatan.',
         imageUrl: currentTypeConfig.defaultImage,
         status: 'terbuka',
         teams: initialTeams,
@@ -108,7 +198,9 @@ export const CreateMatchScreen: React.FC<CreateMatchScreenProps> = ({ onBack, on
 
       onSuccess(matchId);
     } catch (err: any) {
-      setError(err?.message || 'Gagal membuat pertandingan. Periksa koneksi.');
+      setError(
+        err?.message || 'Gagal membuat pertandingan. Periksa koneksi.'
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -116,7 +208,6 @@ export const CreateMatchScreen: React.FC<CreateMatchScreenProps> = ({ onBack, on
 
   return (
     <div className="pb-24 animate-fade-in">
-      {/* Top Bar with Back Arrow */}
       <div className="px-4 py-3 flex items-center gap-3 border-b border-gray-800">
         <button
           onClick={onBack}
@@ -125,7 +216,9 @@ export const CreateMatchScreen: React.FC<CreateMatchScreenProps> = ({ onBack, on
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <h2 className="text-lg font-bold text-white tracking-tight">Buat Pertandingan</h2>
+        <h2 className="text-lg font-bold text-white tracking-tight">
+          Buat Pertandingan
+        </h2>
       </div>
 
       <form onSubmit={handleSubmit} className="p-4 space-y-5">
@@ -135,7 +228,6 @@ export const CreateMatchScreen: React.FC<CreateMatchScreenProps> = ({ onBack, on
           </div>
         )}
 
-        {/* Jenis Pertandingan Section */}
         <div>
           <label className="block text-xs font-semibold text-gray-300 mb-2">
             Jenis Pertandingan
@@ -144,6 +236,7 @@ export const CreateMatchScreen: React.FC<CreateMatchScreenProps> = ({ onBack, on
             {matchTypes.map((type) => {
               const Icon = type.icon;
               const isSelected = selectedType === type.id;
+
               return (
                 <button
                   type="button"
@@ -155,18 +248,27 @@ export const CreateMatchScreen: React.FC<CreateMatchScreenProps> = ({ onBack, on
                       : 'bg-[#121722] border-gray-800 text-gray-400 hover:text-gray-200'
                   }`}
                 >
-                  <div className={`p-2.5 rounded-xl mb-2 ${isSelected ? 'bg-white text-black' : 'bg-gray-800/80 text-gray-400'}`}>
+                  <div
+                    className={`p-2.5 rounded-xl mb-2 ${
+                      isSelected
+                        ? 'bg-white text-black'
+                        : 'bg-gray-800/80 text-gray-400'
+                    }`}
+                  >
                     <Icon className="w-4 h-4" />
                   </div>
-                  <span className="text-xs font-bold leading-tight">{type.title}</span>
-                  <span className="text-[10px] text-gray-400 mt-0.5">{type.format}</span>
+                  <span className="text-xs font-bold leading-tight">
+                    {type.title}
+                  </span>
+                  <span className="text-[10px] text-gray-400 mt-0.5">
+                    {type.format}
+                  </span>
                 </button>
               );
             })}
           </div>
         </div>
 
-        {/* Judul Pertandingan Section */}
         <div>
           <label className="block text-xs font-semibold text-gray-300 mb-1.5">
             Judul Pertandingan
@@ -181,25 +283,23 @@ export const CreateMatchScreen: React.FC<CreateMatchScreenProps> = ({ onBack, on
           />
         </div>
 
-        {/* Tanggal & Waktu Section */}
         <div>
           <label className="block text-xs font-semibold text-gray-300 mb-1.5">
             Tanggal & Waktu
           </label>
           <div className="relative">
             <input
-              type="text"
-              placeholder="Pilih tanggal & waktu (Contoh: Besok, 19:00)"
+              type="datetime-local"
+              min={getLocalDateTime()}
               value={dateTime}
               onChange={(e) => setDateTime(e.target.value)}
-              className="w-full pl-11 pr-4 py-3 bg-[#131924] border border-gray-800 rounded-xl text-xs sm:text-sm text-white placeholder-gray-500 focus:outline-none focus:border-gray-500 transition-colors"
+              className="w-full pl-11 pr-4 py-3 bg-[#131924] border border-gray-800 rounded-xl text-xs sm:text-sm text-white placeholder-gray-500 focus:outline-none focus:border-gray-500 transition-colors [color-scheme:dark]"
               required
             />
             <Calendar className="w-4 h-4 text-gray-400 absolute left-4 top-3.5" />
           </div>
         </div>
 
-        {/* Lokasi / Lapangan Section */}
         <div>
           <label className="block text-xs font-semibold text-gray-300 mb-1.5">
             Lokasi / Lapangan
@@ -209,29 +309,75 @@ export const CreateMatchScreen: React.FC<CreateMatchScreenProps> = ({ onBack, on
               type="text"
               placeholder="Pilih lokasi atau tulis manual"
               value={location}
-              onChange={(e) => setLocation(e.target.value)}
+              onChange={(e) => {
+                setLocation(e.target.value);
+                setCoordinates(null);
+                setLocationMessage(null);
+              }}
               className="w-full pl-11 pr-4 py-3 bg-[#131924] border border-gray-800 rounded-xl text-xs sm:text-sm text-white placeholder-gray-500 focus:outline-none focus:border-gray-500 transition-colors"
               required
             />
             <MapPin className="w-4 h-4 text-gray-400 absolute left-4 top-3.5" />
           </div>
 
-          {/* Quick venue chips */}
+          <div className="grid grid-cols-2 gap-2 mt-2">
+            <button
+              type="button"
+              onClick={openGoogleMaps}
+              className="flex items-center justify-center gap-2 rounded-xl border border-blue-500/40 bg-blue-500/10 px-3 py-2.5 text-xs font-semibold text-blue-200"
+            >
+              <ExternalLink className="h-4 w-4" />
+              Buka Google Maps
+            </button>
+
+            <button
+              type="button"
+              onClick={useCurrentLocation}
+              disabled={isLocating}
+              className="flex items-center justify-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5 text-xs font-semibold text-emerald-200 disabled:opacity-50"
+            >
+              {isLocating ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Navigation className="h-4 w-4" />
+              )}
+              {isLocating ? 'Mencari GPS…' : 'Gunakan Lokasi Saya'}
+            </button>
+          </div>
+
+          {locationMessage && (
+            <p className="mt-2 text-[11px] text-gray-300" role="status">
+              {locationMessage}
+            </p>
+          )}
+
+          {coordinates && (
+            <p className="mt-1 break-all text-[10px] text-emerald-300">
+              Koordinat: {coordinates.lat.toFixed(6)},{' '}
+              {coordinates.lng.toFixed(6)}
+            </p>
+          )}
+
           <div className="flex flex-wrap gap-1.5 mt-2">
-            {venues.slice(0, 3).map((v) => (
+            {venues.slice(0, 3).map((venue) => (
               <button
                 type="button"
-                key={v.id}
-                onClick={() => setLocation(v.name)}
+                key={venue.id}
+                onClick={() => {
+                  setLocation(venue.name);
+                  setCoordinates(null);
+                  setLocationMessage(
+                    `${venue.name} dipilih. Tekan “Buka Google Maps” untuk melihat lokasinya.`
+                  );
+                }}
                 className="text-[10px] px-2 py-1 bg-gray-800/60 hover:bg-gray-800 text-gray-300 rounded-lg border border-gray-700/60 transition-colors"
               >
-                + {v.name}
+                + {venue.name}
               </button>
             ))}
           </div>
         </div>
 
-        {/* Deskripsi (opsional) Section */}
         <div>
           <label className="block text-xs font-semibold text-gray-300 mb-1.5">
             Deskripsi (opsional)
@@ -245,7 +391,6 @@ export const CreateMatchScreen: React.FC<CreateMatchScreenProps> = ({ onBack, on
           />
         </div>
 
-        {/* Jumlah Tim Toggle matching screenshot */}
         <div>
           <label className="block text-xs font-semibold text-gray-300 mb-1.5">
             Jumlah Tim
@@ -275,11 +420,12 @@ export const CreateMatchScreen: React.FC<CreateMatchScreenProps> = ({ onBack, on
             </button>
           </div>
           <p className="text-[11px] text-gray-400 mt-1">
-            {teamCount === 1 ? '1 slot terbuka untuk lawan sparring menantang tim Anda.' : 'Kedua slot tim telah ditentukan lebih awal.'}
+            {teamCount === 1
+              ? '1 slot terbuka untuk lawan sparring menantang tim Anda.'
+              : 'Kedua slot tim telah ditentukan lebih awal.'}
           </p>
         </div>
 
-        {/* Submit Button */}
         <div className="pt-2">
           <button
             type="submit"

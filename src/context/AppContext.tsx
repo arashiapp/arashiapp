@@ -1,20 +1,36 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { 
-  collection, 
-  onSnapshot, 
-  setDoc, 
-  doc, 
-  updateDoc, 
-  deleteDoc, 
-  getDocs, 
-  serverTimestamp,
-  addDoc
+import {
+  collection,
+  onSnapshot,
+  setDoc,
+  doc,
+  updateDoc,
+  deleteDoc
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { Match, Team, NotificationItem, MessageItem, Venue, Tournament, MatchType, MatchStatus } from '../types';
-import { INITIAL_MATCHES, INITIAL_TEAMS, INITIAL_NOTIFICATIONS, INITIAL_VENUES, INITIAL_TOURNAMENTS } from '../data/initialData';
+import {
+  Match,
+  Team,
+  NotificationItem,
+  MessageItem,
+  Venue,
+  Tournament,
+  MatchStatus
+} from '../types';
+import {
+  INITIAL_MATCHES,
+  INITIAL_TEAMS,
+  INITIAL_NOTIFICATIONS,
+  INITIAL_VENUES,
+  INITIAL_TOURNAMENTS
+} from '../data/initialData';
 import { useAuth } from './AuthContext';
-import { supabase, isSupabaseConfigured, subscribeToSupabaseRealtime } from '../lib/supabase';
+import {
+  supabase,
+  isSupabaseConfigured,
+  subscribeToSupabaseRealtime
+} from '../lib/supabase';
 
 interface AppContextType {
   matches: Match[];
@@ -26,20 +42,51 @@ interface AppContextType {
   unreadNotificationsCount: number;
   activeToast: NotificationItem | null;
   dismissToast: () => void;
-  // Match actions
-  createMatch: (data: Omit<Match, 'id' | 'createdAt' | 'currentTeams' | 'targetTeams'>) => Promise<string>;
-  joinMatch: (matchId: string, teamData: { teamId: string; teamName: string; captainName: string; captainPhone: string }) => Promise<void>;
+
+  createMatch: (
+    data: Omit<Match, 'id' | 'createdAt' | 'currentTeams' | 'targetTeams'>
+  ) => Promise<string>;
+
+  joinMatch: (
+    matchId: string,
+    teamData: {
+      teamId: string;
+      teamName: string;
+      captainName: string;
+      captainPhone: string;
+    }
+  ) => Promise<void>;
+
   leaveMatch: (matchId: string, teamId: string) => Promise<void>;
   updateMatchStatus: (matchId: string, status: MatchStatus) => Promise<void>;
   deleteMatch: (matchId: string) => Promise<void>;
-  // Team actions
+
   myTeam: Team | undefined;
   updateTeam: (team: Team) => Promise<void>;
-  addTeamMember: (teamId: string, member: { name: string; role: string; position: string; number?: number }) => Promise<void>;
-  // Message actions
-  sendMessage: (channelId: string, channelName: string, text: string) => Promise<void>;
-  // Notification actions
-  sendNotification: (title: string, message: string, type: NotificationItem['type'], relatedMatchId?: string) => Promise<void>;
+
+  addTeamMember: (
+    teamId: string,
+    member: {
+      name: string;
+      role: string;
+      position: string;
+      number?: number;
+    }
+  ) => Promise<void>;
+
+  sendMessage: (
+    channelId: string,
+    channelName: string,
+    text: string
+  ) => Promise<void>;
+
+  sendNotification: (
+    title: string,
+    message: string,
+    type: NotificationItem['type'],
+    relatedMatchId?: string
+  ) => Promise<void>;
+
   markNotificationAsRead: (notifId: string) => Promise<void>;
   markAllNotificationsAsRead: () => Promise<void>;
   clearAllNotifications: () => Promise<void>;
@@ -47,134 +94,179 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
+  children
+}) => {
   const { currentUser, isAdmin } = useAuth();
+
   const [matches, setMatches] = useState<Match[]>(INITIAL_MATCHES);
   const [teams, setTeams] = useState<Team[]>(INITIAL_TEAMS);
-  const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<NotificationItem[]>(
+    INITIAL_NOTIFICATIONS
+  );
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [venues] = useState<Venue[]>(INITIAL_VENUES);
   const [tournaments] = useState<Tournament[]>(INITIAL_TOURNAMENTS);
-  
+
   const [activeToast, setActiveToast] = useState<NotificationItem | null>(null);
   const [hasInitializedListener, setHasInitializedListener] = useState(false);
 
-  // Real-time synchronization with Firestore
+  // Real-time synchronization with Firebase and Supabase.
   useEffect(() => {
-    // 1. Matches real-time listener
-    const matchesRef = collection(db, 'matches');
+    if (!currentUser) return;
+
     const unsubMatches = onSnapshot(
-      matchesRef,
+      collection(db, 'matches'),
       (snapshot) => {
         if (snapshot.empty) {
-          // If Firestore is empty, seed with initial matches
-          seedInitialData();
-        } else {
-          const list: Match[] = [];
-          snapshot.forEach((docSnap) => {
-            list.push({ id: docSnap.id, ...(docSnap.data() as Omit<Match, 'id'>) });
-          });
-          // Sort newest first
-          setMatches(list);
+          void seedInitialData();
+          return;
         }
+
+        const list: Match[] = [];
+
+        snapshot.forEach((docSnap) => {
+          list.push({
+            id: docSnap.id,
+            ...(docSnap.data() as Omit<Match, 'id'>)
+          });
+        });
+
+        list.sort((a, b) => {
+          const dateA = Date.parse(a.createdAt || '') || 0;
+          const dateB = Date.parse(b.createdAt || '') || 0;
+          return dateB - dateA;
+        });
+
+        setMatches(list);
       },
       (error) => {
+        console.error('Gagal memuat pertandingan Firebase:', error);
         handleFirestoreError(error, OperationType.LIST, 'matches');
       }
     );
 
-    // 2. Teams real-time listener
-    const teamsRef = collection(db, 'teams');
     const unsubTeams = onSnapshot(
-      teamsRef,
+      collection(db, 'teams'),
       (snapshot) => {
-        if (!snapshot.empty) {
-          const list: Team[] = [];
-          snapshot.forEach((docSnap) => {
-            list.push({ id: docSnap.id, ...(docSnap.data() as Omit<Team, 'id'>) });
+        if (snapshot.empty) return;
+
+        const list: Team[] = [];
+
+        snapshot.forEach((docSnap) => {
+          list.push({
+            id: docSnap.id,
+            ...(docSnap.data() as Omit<Team, 'id'>)
           });
-          setTeams(list);
-        }
+        });
+
+        setTeams(list);
       },
       (error) => {
+        console.error('Gagal memuat tim:', error);
         handleFirestoreError(error, OperationType.LIST, 'teams');
       }
     );
 
-    // 3. Notifications real-time listener
-    const notifsRef = collection(db, 'notifications');
     const unsubNotifs = onSnapshot(
-      notifsRef,
+      collection(db, 'notifications'),
       (snapshot) => {
-        if (!snapshot.empty) {
-          const list: NotificationItem[] = [];
-          snapshot.forEach((docSnap) => {
-            list.push({ id: docSnap.id, ...(docSnap.data() as Omit<NotificationItem, 'id'>) });
+        const list: NotificationItem[] = [];
+
+        snapshot.forEach((docSnap) => {
+          list.push({
+            id: docSnap.id,
+            ...(docSnap.data() as Omit<NotificationItem, 'id'>)
           });
-          // sort desc by timestamp
-          list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-          
-          // If new notification arrives while user is active, show banner toast
-          if (hasInitializedListener && list.length > 0) {
-            const newest = list[0];
-            const isFresh = Date.now() - (newest.timestamp || 0) < 10000;
-            if (isFresh) {
-              setActiveToast(newest);
-            }
+        });
+
+        list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+        if (hasInitializedListener && list.length > 0) {
+          const newest = list[0];
+          const isFresh =
+            Date.now() - (newest.timestamp || 0) < 10000;
+
+          if (isFresh) {
+            setActiveToast(newest);
           }
-          setNotifications(list);
         }
+
+        setNotifications(list);
         setHasInitializedListener(true);
       },
       (error) => {
+        console.error('Gagal memuat notifikasi:', error);
         handleFirestoreError(error, OperationType.LIST, 'notifications');
       }
     );
 
-    // 4. Messages real-time listener
-    const messagesRef = collection(db, 'messages');
     const unsubMessages = onSnapshot(
-      messagesRef,
+      collection(db, 'messages'),
       (snapshot) => {
         const list: MessageItem[] = [];
+
         snapshot.forEach((docSnap) => {
-          list.push({ id: docSnap.id, ...(docSnap.data() as Omit<MessageItem, 'id'>) });
+          list.push({
+            id: docSnap.id,
+            ...(docSnap.data() as Omit<MessageItem, 'id'>)
+          });
         });
+
         list.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
         setMessages(list);
       },
       (error) => {
+        console.error('Gagal memuat pesan:', error);
         handleFirestoreError(error, OperationType.LIST, 'messages');
       }
     );
 
-    // 5. Supabase Real-Time Listener (When Supabase is configured)
     let unsubSupabaseMatches = () => {};
     let unsubSupabaseNotifs = () => {};
     let unsubSupabaseMessages = () => {};
 
     if (isSupabaseConfigured) {
-      console.log('⚡ Supabase Real-time is enabled and syncing...');
       unsubSupabaseMatches = subscribeToSupabaseRealtime(
         'matches',
         (newRecord) => {
-          setMatches((prev) => {
-            if (prev.some((m) => m.id === newRecord.id)) return prev;
-            return [newRecord, ...prev];
+          setMatches((previous) => {
+            const exists = previous.some((match) => match.id === newRecord.id);
+
+            if (exists) {
+              return previous.map((match) =>
+                match.id === newRecord.id
+                  ? { ...match, ...newRecord }
+                  : match
+              );
+            }
+
+            return [newRecord, ...previous];
           });
         },
         (updatedRecord) => {
-          setMatches((prev) => prev.map((m) => (m.id === updatedRecord.id ? { ...m, ...updatedRecord } : m)));
+          setMatches((previous) =>
+            previous.map((match) =>
+              match.id === updatedRecord.id
+                ? { ...match, ...updatedRecord }
+                : match
+            )
+          );
         },
         (deletedRecord) => {
-          setMatches((prev) => prev.filter((m) => m.id !== deletedRecord.id));
+          setMatches((previous) =>
+            previous.filter((match) => match.id !== deletedRecord.id)
+          );
         }
       );
 
       unsubSupabaseNotifs = subscribeToSupabaseRealtime(
         'notifications',
         (newNotif) => {
-          setNotifications((prev) => [newNotif, ...prev]);
+          setNotifications((previous) => [
+            newNotif,
+            ...previous.filter((item) => item.id !== newNotif.id)
+          ]);
           setActiveToast(newNotif);
         }
       );
@@ -182,7 +274,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubSupabaseMessages = subscribeToSupabaseRealtime(
         'messages',
         (newMsg) => {
-          setMessages((prev) => [...prev, newMsg]);
+          setMessages((previous) => {
+            if (previous.some((item) => item.id === newMsg.id)) {
+              return previous;
+            }
+
+            return [...previous, newMsg];
+          });
         }
       );
     }
@@ -196,21 +294,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubSupabaseNotifs();
       unsubSupabaseMessages();
     };
-  }, [hasInitializedListener]);
+  }, [currentUser?.uid, hasInitializedListener]);
 
-  // Seed Firestore if brand new database
+  // Seed Firebase only when the matches collection is empty.
   const seedInitialData = async () => {
     try {
-      for (const m of INITIAL_MATCHES) {
-        await setDoc(doc(db, 'matches', m.id), m);
+      for (const match of INITIAL_MATCHES) {
+        await setDoc(doc(db, 'matches', match.id), match);
       }
-      for (const t of INITIAL_TEAMS) {
-        await setDoc(doc(db, 'teams', t.id), t);
+
+      for (const team of INITIAL_TEAMS) {
+        await setDoc(doc(db, 'teams', team.id), team);
       }
-      for (const n of INITIAL_NOTIFICATIONS) {
-        await setDoc(doc(db, 'notifications', n.id), n);
+
+      for (const notification of INITIAL_NOTIFICATIONS) {
+        await setDoc(
+          doc(db, 'notifications', notification.id),
+          notification
+        );
       }
-      // Seed a couple messages
+
       await setDoc(doc(db, 'messages', 'msg-1'), {
         channelId: 'team-sukatani',
         channelName: 'Sukatani Squad',
@@ -220,6 +323,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createdAt: '19:24',
         timestamp: Date.now() - 3600000
       });
+
       await setDoc(doc(db, 'messages', 'msg-2'), {
         channelId: 'team-cibitung',
         channelName: 'Cibitung United',
@@ -229,21 +333,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createdAt: '16:10',
         timestamp: Date.now() - 7200000
       });
-    } catch (err) {
-      console.warn('Seeding notice:', err);
+    } catch (error) {
+      console.error('Gagal menyiapkan data awal:', error);
     }
   };
 
   const dismissToast = () => setActiveToast(null);
 
-  // Send real-time notification
+  // Send notification.
   const sendNotification = async (
-    title: string, 
-    message: string, 
-    type: NotificationItem['type'], 
+    title: string,
+    message: string,
+    type: NotificationItem['type'],
     relatedMatchId?: string
   ) => {
-    const notifId = `notif-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const notifId = `notif-${Date.now()}-${Math.random()
+      .toString(36)
+      .substring(2, 6)}`;
+
     const newNotif: NotificationItem = {
       id: notifId,
       title,
@@ -254,32 +361,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       timestamp: Date.now(),
       readBy: []
     };
-    try {
-      await setDoc(doc(db, 'notifications', notifId), newNotif);
-      setActiveToast(newNotif);
 
-      // Dual-sync to Supabase if configured
-      if (isSupabaseConfigured) {
-        try {
-          await supabase.from('notifications').insert({
-            id: notifId,
-            title,
-            message,
-            type,
-            related_match_id: relatedMatchId || null
-          });
-        } catch (err) {
-          console.warn('Supabase notif sync:', err);
+    // Firebase is the primary notification store.
+    await setDoc(doc(db, 'notifications', notifId), newNotif);
+    setActiveToast(newNotif);
+
+    if (isSupabaseConfigured) {
+      try {
+        const { error } = await supabase.from('notifications').insert({
+          id: notifId,
+          title,
+          message,
+          type,
+          related_match_id: relatedMatchId || null
+        });
+
+        if (error) {
+          console.warn('Sinkronisasi notifikasi Supabase gagal:', error.message);
         }
+      } catch (error) {
+        console.warn('Kesalahan sinkronisasi notifikasi:', error);
       }
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, 'notifications');
     }
   };
 
-  // Create match
-  const createMatch = async (data: Omit<Match, 'id' | 'createdAt' | 'currentTeams' | 'targetTeams'>) => {
-    const matchId = `match-${Date.now()}`;
+  // Create match.
+  const createMatch = async (
+    data: Omit<Match, 'id' | 'createdAt' | 'currentTeams' | 'targetTeams'>
+  ): Promise<string> => {
+    const matchId = `match-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 7)}`;
+
     const newMatch: Match = {
       ...data,
       id: matchId,
@@ -288,56 +401,83 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: new Date().toISOString()
     };
 
+    // Save to Firebase first.
     try {
       await setDoc(doc(db, 'matches', matchId), newMatch);
+    } catch (error) {
+      console.error('Gagal menyimpan pertandingan ke Firebase:', error);
+      handleFirestoreError(error, OperationType.CREATE, 'matches');
 
-      // Dual-sync to Supabase if configured
-      if (isSupabaseConfigured) {
-        try {
-          await supabase.from('matches').insert({
-            id: matchId,
-            title: data.title,
-            type: data.type,
-            format: data.format,
-            match_date: data.date,
-            location: data.location,
-            level: data.level,
-            description: data.description,
-            status: 'terbuka',
-            target_teams: 2,
-            current_teams: data.teams?.length || 1,
-            created_by: currentUser?.uid || 'guest',
-            creator_name: data.creatorName,
-            creator_phone: data.creatorPhone
-          });
-        } catch (err) {
-          console.warn('Supabase match sync:', err);
+      throw new Error(
+        'Pertandingan gagal disimpan. Periksa koneksi dan izin database Firebase.'
+      );
+    }
+
+    // Update local state immediately.
+    setMatches((previous) => [
+      newMatch,
+      ...previous.filter((match) => match.id !== matchId)
+    ]);
+
+    // Sync to Supabase when configured.
+    if (isSupabaseConfigured) {
+      try {
+        const { error } = await supabase.from('matches').insert({
+          id: matchId,
+          title: data.title,
+          type: data.type,
+          format: data.format,
+          match_date: data.date,
+          location: data.location,
+          level: data.level,
+          description: data.description,
+          status: data.status || 'terbuka',
+          target_teams: 2,
+          current_teams: data.teams?.length || 1,
+          created_by: currentUser?.uid || 'guest',
+          creator_name: data.creatorName,
+          creator_phone: data.creatorPhone
+        });
+
+        if (error) {
+          console.warn('Sinkronisasi pertandingan Supabase gagal:', error.message);
         }
+      } catch (error) {
+        console.warn('Kesalahan sinkronisasi pertandingan:', error);
       }
+    }
 
-      // Broadcast real-time notification to all devices
+    // Notification failure must not undo a saved match.
+    try {
       await sendNotification(
         'Pertandingan Baru Dibuat! ⚽',
         `${data.title} di ${data.location} (${data.format}) telah dibuka untuk pendaftaran.`,
         'match_created',
         matchId
       );
-      return matchId;
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, 'matches');
-      return '';
+      console.warn('Pertandingan tersimpan, tetapi notifikasi gagal:', error);
     }
+
+    return matchId;
   };
 
-  // Join match
+  // Join match.
   const joinMatch = async (
-    matchId: string, 
-    teamData: { teamId: string; teamName: string; captainName: string; captainPhone: string }
+    matchId: string,
+    teamData: {
+      teamId: string;
+      teamName: string;
+      captainName: string;
+      captainPhone: string;
+    }
   ) => {
-    const target = matches.find((m) => m.id === matchId);
-    if (!target) return;
+    const target = matches.find((match) => match.id === matchId);
+    if (!target) {
+      throw new Error('Pertandingan tidak ditemukan. Muat ulang daftar pertandingan.');
+    }
 
-    if (target.teams.some((t) => t.teamId === teamData.teamId)) {
+    if (target.teams.some((team) => team.teamId === teamData.teamId)) {
       throw new Error('Tim Anda sudah terdaftar di pertandingan ini.');
     }
 
@@ -354,18 +494,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     ];
 
-    const newStatus: MatchStatus = updatedTeams.length >= 2 ? 'penuh' : 'terbuka';
+    const newStatus: MatchStatus =
+      updatedTeams.length >= 2 ? 'penuh' : 'terbuka';
 
     try {
-      const matchDocRef = doc(db, 'matches', matchId);
-      await updateDoc(matchDocRef, {
+      await updateDoc(doc(db, 'matches', matchId), {
         teams: updatedTeams,
         currentTeams: updatedTeams.length,
         status: newStatus,
         updatedAt: new Date().toISOString()
       });
 
-      // Broadcast real-time notification to opponent and all devices!
       await sendNotification(
         'Lawan Sparring Ditemukan! 🤝',
         `${teamData.teamName} telah bergabung ke pertandingan "${target.title}" di ${target.location}!`,
@@ -374,15 +513,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `matches/${matchId}`);
+      throw error;
     }
   };
 
-  // Leave match
+  // Leave match.
   const leaveMatch = async (matchId: string, teamId: string) => {
-    const target = matches.find((m) => m.id === matchId);
+    const target = matches.find((match) => match.id === matchId);
     if (!target) return;
 
-    const remaining = target.teams.filter((t) => t.teamId !== teamId);
+    const remaining = target.teams.filter((team) => team.teamId !== teamId);
+
     try {
       await updateDoc(doc(db, 'matches', matchId), {
         teams: remaining,
@@ -399,19 +540,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `matches/${matchId}`);
+      throw error;
     }
   };
 
-  // Update match status (Admin or Creator)
-  const updateMatchStatus = async (matchId: string, status: MatchStatus) => {
-    const target = matches.find((m) => m.id === matchId);
+  // Update match status.
+  const updateMatchStatus = async (
+    matchId: string,
+    status: MatchStatus
+  ) => {
+    const target = matches.find((match) => match.id === matchId);
+
     try {
       await updateDoc(doc(db, 'matches', matchId), {
         status,
         updatedAt: new Date().toISOString()
       });
 
-      const label = status === 'selesai' ? 'Telah Selesai' : status === 'dibatalkan' ? 'Dibatalkan' : status === 'penuh' ? 'Telah Penuh' : 'Terbuka';
+      const label =
+        status === 'selesai'
+          ? 'Telah Selesai'
+          : status === 'dibatalkan'
+            ? 'Dibatalkan'
+            : status === 'penuh'
+              ? 'Telah Penuh'
+              : 'Terbuka';
+
       await sendNotification(
         `Status Pertandingan Diperbarui: ${label}`,
         `Pertandingan "${target?.title || 'Sparring'}" kini berstatus ${label}.`,
@@ -420,14 +574,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `matches/${matchId}`);
+      throw error;
     }
   };
 
-  // Delete match (Admin full access or Creator)
+  // Delete match.
   const deleteMatch = async (matchId: string) => {
-    const target = matches.find((m) => m.id === matchId);
+    const target = matches.find((match) => match.id === matchId);
+
     try {
       await deleteDoc(doc(db, 'matches', matchId));
+
+      setMatches((previous) =>
+        previous.filter((match) => match.id !== matchId)
+      );
+
       await sendNotification(
         'Pertandingan Dihapus 🗑️',
         `Pertandingan "${target?.title || 'Sparring'}" telah dihapus oleh ${isAdmin ? 'Admin' : 'Penyelenggara'}.`,
@@ -435,19 +596,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `matches/${matchId}`);
+      throw error;
     }
   };
 
-  // User's default team
-  const myTeam = teams.find((t) => t.id === currentUser?.teamId) || teams[0];
+  // User's default team.
+  const myTeam =
+    teams.find((team) => team.id === currentUser?.teamId) || teams[0];
 
-  // Update team
+  // Update team.
   const updateTeam = async (updatedTeam: Team) => {
     try {
-      await setDoc(doc(db, 'teams', updatedTeam.id), {
-        ...updatedTeam,
-        updatedAt: new Date().toISOString()
-      }, { merge: true });
+      await setDoc(
+        doc(db, 'teams', updatedTeam.id),
+        {
+          ...updatedTeam,
+          updatedAt: new Date().toISOString()
+        },
+        { merge: true }
+      );
 
       await sendNotification(
         'Profil Tim Diperbarui ⚡',
@@ -455,20 +622,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         'team_update'
       );
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `teams/${updatedTeam.id}`);
+      handleFirestoreError(
+        error,
+        OperationType.UPDATE,
+        `teams/${updatedTeam.id}`
+      );
+      throw error;
     }
   };
 
-  // Add team member
-  const addTeamMember = async (teamId: string, member: { name: string; role: string; position: string; number?: number }) => {
-    const target = teams.find((t) => t.id === teamId);
+  // Add team member.
+  const addTeamMember = async (
+    teamId: string,
+    member: {
+      name: string;
+      role: string;
+      position: string;
+      number?: number;
+    }
+  ) => {
+    const target = teams.find((team) => team.id === teamId);
     if (!target) return;
 
     const newMember = {
       id: `m-${Date.now()}`,
       ...member
     };
+
     const updatedMembers = [...target.members, newMember];
+
     try {
       await updateDoc(doc(db, 'teams', teamId), {
         members: updatedMembers,
@@ -476,13 +658,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updatedAt: new Date().toISOString()
       });
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `teams/${teamId}`);
+      handleFirestoreError(
+        error,
+        OperationType.UPDATE,
+        `teams/${teamId}`
+      );
+      throw error;
     }
   };
 
-  // Send real-time chat message
-  const sendMessage = async (channelId: string, channelName: string, text: string) => {
+  // Send chat message.
+  const sendMessage = async (
+    channelId: string,
+    channelName: string,
+    text: string
+  ) => {
     const msgId = `msg-${Date.now()}`;
+
     const newMsg: MessageItem = {
       id: msgId,
       channelId,
@@ -492,17 +684,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       senderRole: currentUser?.role || 'member',
       senderAvatar: currentUser?.avatarUrl,
       text,
-      createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      createdAt: new Date().toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit'
+      }),
       timestamp: Date.now()
     };
 
     try {
       await setDoc(doc(db, 'messages', msgId), newMsg);
 
-      // Dual-sync to Supabase if configured
       if (isSupabaseConfigured) {
         try {
-          await supabase.from('messages').insert({
+          const { error } = await supabase.from('messages').insert({
             id: msgId,
             channel_id: channelId,
             channel_name: channelName,
@@ -512,68 +706,77 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             sender_avatar: newMsg.senderAvatar || null,
             text: newMsg.text
           });
-        } catch (err) {
-          console.warn('Supabase message sync:', err);
+
+          if (error) {
+            console.warn('Sinkronisasi pesan Supabase gagal:', error.message);
+          }
+        } catch (error) {
+          console.warn('Kesalahan sinkronisasi pesan:', error);
         }
       }
 
-      // Also notify
       await sendNotification(
         `Pesan Baru dari ${newMsg.senderName}`,
-        `"${text.length > 45 ? text.substring(0, 45) + '...' : text}"`,
+        `"${text.length > 45 ? `${text.substring(0, 45)}...` : text}"`,
         'chat_message'
       );
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'messages');
+      throw error;
     }
   };
 
-  // Notification read actions
+  // Mark one notification as read.
   const markNotificationAsRead = async (notifId: string) => {
     const uid = currentUser?.uid || 'anonymous';
-    const notif = notifications.find((n) => n.id === notifId);
+    const notif = notifications.find((item) => item.id === notifId);
     if (!notif) return;
+
     const currentReadBy = notif.readBy || [];
-    if (!currentReadBy.includes(uid)) {
-      try {
-        await updateDoc(doc(db, 'notifications', notifId), {
-          readBy: [...currentReadBy, uid]
-        });
-      } catch (err) {
-        console.warn('Failed marking notif read:', err);
-      }
+    if (currentReadBy.includes(uid)) return;
+
+    try {
+      await updateDoc(doc(db, 'notifications', notifId), {
+        readBy: [...currentReadBy, uid]
+      });
+    } catch (error) {
+      console.warn('Gagal menandai notifikasi sudah dibaca:', error);
     }
   };
 
+  // Mark all notifications as read.
   const markAllNotificationsAsRead = async () => {
     const uid = currentUser?.uid || 'anonymous';
-    for (const n of notifications) {
-      if (!n.readBy?.includes(uid)) {
+
+    for (const notification of notifications) {
+      if (!notification.readBy?.includes(uid)) {
         try {
-          await updateDoc(doc(db, 'notifications', n.id), {
-            readBy: [...(n.readBy || []), uid]
+          await updateDoc(doc(db, 'notifications', notification.id), {
+            readBy: [...(notification.readBy || []), uid]
           });
-        } catch {
-          // ignore
+        } catch (error) {
+          console.warn('Gagal memperbarui status notifikasi:', error);
         }
       }
     }
   };
 
+  // Clear all notifications.
   const clearAllNotifications = async () => {
     if (!isAdmin) return;
-    for (const n of notifications) {
+
+    for (const notification of notifications) {
       try {
-        await deleteDoc(doc(db, 'notifications', n.id));
-      } catch {
-        // ignore
+        await deleteDoc(doc(db, 'notifications', notification.id));
+      } catch (error) {
+        console.warn('Gagal menghapus notifikasi:', error);
       }
     }
   };
 
-  // Unread count
   const unreadNotificationsCount = notifications.filter(
-    (n) => !(n.readBy || []).includes(currentUser?.uid || '')
+    (notification) =>
+      !(notification.readBy || []).includes(currentUser?.uid || '')
   ).length;
 
   return (
@@ -610,8 +813,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
 export const useApp = () => {
   const context = useContext(AppContext);
+
   if (!context) {
     throw new Error('useApp must be used within an AppProvider');
   }
+
   return context;
 };
