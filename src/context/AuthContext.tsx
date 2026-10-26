@@ -1,4 +1,9 @@
 
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
@@ -18,6 +23,7 @@ interface AuthContextType {
   signUpWithEmail: (name: string, email: string, password: string) => Promise<void>;
   loginWithEmail: (email: string, password: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  updatePassword: (password: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -165,6 +171,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (error) throw error;
   };
 
+  const updatePassword = async (password: string) => {
+    const { data: sessionData, error: sessionError } =
+      await supabase.auth.getSession();
+
+    if (sessionError) throw sessionError;
+
+    if (!sessionData.session) {
+      throw new Error(
+        'Sesi pemulihan tidak ditemukan. Buka kembali tautan terbaru dari email.'
+      );
+    }
+
+    const { error } = await supabase.auth.updateUser({ password });
+
+    if (error) throw error;
+  };
+
   const signUpWithEmail = async (name: string, email: string, password: string) => {
     const { error } = await supabase.auth.signUp({
       email: email.trim(),
@@ -240,6 +263,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signUpWithEmail,
         loginWithEmail,
         resetPassword,
+        updatePassword,
       }}
     >
       {children}
