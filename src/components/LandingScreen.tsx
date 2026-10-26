@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { ArrowRight, Shield, UserRoundPlus, LogIn } from 'lucide-react';
+import { ArrowRight, Shield, UserRoundPlus, LogIn, KeyRound, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 interface LandingScreenProps {
@@ -8,14 +8,22 @@ interface LandingScreenProps {
 }
 
 export const LandingScreen: React.FC<LandingScreenProps> = ({ onEnterApp }) => {
-  const { loginWithEmail, signUpWithEmail } = useAuth();
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const { loginWithEmail, signUpWithEmail, resetPassword } = useAuth();
+
+  const [mode, setMode] = useState<'login' | 'signup' | 'reset'>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState(false);
+
+  const changeMode = (nextMode: 'login' | 'signup' | 'reset') => {
+    setMode(nextMode);
+    setMessage('');
+    setError(false);
+    setPassword('');
+  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -28,7 +36,7 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onEnterApp }) => {
       return;
     }
 
-    if (password.length < 6) {
+    if (mode !== 'reset' && password.length < 6) {
       setError(true);
       setMessage('Kata sandi minimal 6 karakter.');
       return;
@@ -37,13 +45,15 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onEnterApp }) => {
     setLoading(true);
 
     try {
-      if (mode === 'signup') {
+      if (mode === 'reset') {
+        await resetPassword(email);
+        setMessage('Jika email terdaftar, tautan pemulihan akan dikirim. Periksa kotak masuk dan folder spam.');
+        setError(false);
+      } else if (mode === 'signup') {
         await signUpWithEmail(name, email, password);
         setPassword('');
         setMode('login');
-        setMessage(
-          'Pendaftaran berhasil. Jika diminta verifikasi email, verifikasi dahulu sebelum login.'
-        );
+        setMessage('Pendaftaran berhasil. Jika diminta verifikasi email, verifikasi dahulu sebelum login.');
       } else {
         await loginWithEmail(email, password);
         onEnterApp();
@@ -94,41 +104,47 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onEnterApp }) => {
         </p>
 
         <div className="w-full max-w-sm mt-8 text-left">
-          <div className="grid grid-cols-2 gap-2 mb-4">
-            <button
-              type="button"
-              onClick={() => {
-                setMode('login');
-                setMessage('');
-                setError(false);
-              }}
-              className={`py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 ${
-                mode === 'login'
-                  ? 'bg-white text-black'
-                  : 'bg-gray-900 text-gray-300 border border-gray-700'
-              }`}
-            >
-              <LogIn className="w-4 h-4" />
-              Masuk
-            </button>
+          {mode !== 'reset' && (
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              <button
+                type="button"
+                onClick={() => changeMode('login')}
+                className={`py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 ${
+                  mode === 'login'
+                    ? 'bg-white text-black'
+                    : 'bg-gray-900 text-gray-300 border border-gray-700'
+                }`}
+              >
+                <LogIn className="w-4 h-4" />
+                Masuk
+              </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                setMode('signup');
-                setMessage('');
-                setError(false);
-              }}
-              className={`py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 ${
-                mode === 'signup'
-                  ? 'bg-white text-black'
-                  : 'bg-gray-900 text-gray-300 border border-gray-700'
-              }`}
-            >
-              <UserRoundPlus className="w-4 h-4" />
-              Daftar
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={() => changeMode('signup')}
+                className={`py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 ${
+                  mode === 'signup'
+                    ? 'bg-white text-black'
+                    : 'bg-gray-900 text-gray-300 border border-gray-700'
+                }`}
+              >
+                <UserRoundPlus className="w-4 h-4" />
+                Daftar
+              </button>
+            </div>
+          )}
+
+          {mode === 'reset' && (
+            <div className="mb-4">
+              <h3 className="font-bold text-white flex items-center gap-2">
+                <KeyRound className="w-5 h-5" />
+                Lupa Kata Sandi
+              </h3>
+              <p className="text-xs text-gray-400 mt-2">
+                Masukkan email akunmu. Kami akan mengirimkan tautan untuk membuat kata sandi baru.
+              </p>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-3">
             {mode === 'signup' && (
@@ -153,16 +169,30 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onEnterApp }) => {
               className="w-full rounded-xl bg-gray-900 border border-gray-700 px-4 py-3 text-sm text-white outline-none focus:border-cyan-500"
             />
 
-            <input
-              type="password"
-              autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="Kata sandi (minimal 6 karakter)"
-              minLength={6}
-              required
-              className="w-full rounded-xl bg-gray-900 border border-gray-700 px-4 py-3 text-sm text-white outline-none focus:border-cyan-500"
-            />
+            {mode !== 'reset' && (
+              <input
+                type="password"
+                autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Kata sandi (minimal 6 karakter)"
+                minLength={6}
+                required
+                className="w-full rounded-xl bg-gray-900 border border-gray-700 px-4 py-3 text-sm text-white outline-none focus:border-cyan-500"
+              />
+            )}
+
+            {mode === 'login' && (
+              <div className="text-right">
+                <button
+                  type="button"
+                  onClick={() => changeMode('reset')}
+                  className="text-xs text-cyan-400 hover:text-cyan-300 underline underline-offset-4"
+                >
+                  Lupa Kata Sandi?
+                </button>
+              </div>
+            )}
 
             {message && (
               <p
@@ -182,12 +212,25 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onEnterApp }) => {
             >
               {loading
                 ? 'Mohon tunggu...'
-                : mode === 'login'
-                  ? 'Masuk ke SparringHub'
-                  : 'Buat Akun'}
+                : mode === 'reset'
+                  ? 'Kirim Tautan Reset'
+                  : mode === 'login'
+                    ? 'Masuk ke SparringHub'
+                    : 'Buat Akun'}
               {!loading && <ArrowRight className="w-4 h-4" />}
             </button>
           </form>
+
+          {mode === 'reset' && (
+            <button
+              type="button"
+              onClick={() => changeMode('login')}
+              className="w-full mt-3 py-2 text-sm text-gray-300 hover:text-white flex items-center justify-center gap-2"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Kembali ke Login
+            </button>
+          )}
 
           <div className="flex items-center justify-center gap-2 text-gray-500 mt-5">
             <Shield className="w-3.5 h-3.5" />
