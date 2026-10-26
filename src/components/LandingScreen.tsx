@@ -1,28 +1,97 @@
 
-import React, { useState } from 'react';
-import { ArrowRight, Shield, UserRoundPlus, LogIn, KeyRound, ArrowLeft } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import {
+  ArrowRight,
+  Shield,
+  UserRoundPlus,
+  LogIn,
+  KeyRound,
+  ArrowLeft,
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 
 interface LandingScreenProps {
   onEnterApp: () => void;
 }
 
-export const LandingScreen: React.FC<LandingScreenProps> = ({ onEnterApp }) => {
-  const { loginWithEmail, signUpWithEmail, resetPassword } = useAuth();
+type ScreenMode = 'login' | 'signup' | 'reset' | 'recovery';
 
-  const [mode, setMode] = useState<'login' | 'signup' | 'reset'>('login');
+export const LandingScreen: React.FC<LandingScreenProps> = ({ onEnterApp }) => {
+  const { loginWithEmail, signUpWithEmail, resetPassword, updatePassword } = useAuth();
+
+  const [mode, setMode] = useState<ScreenMode>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState(false);
 
-  const changeMode = (nextMode: 'login' | 'signup' | 'reset') => {
+  useEffect(() => {
+    let active = true;
+
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!active) return;
+
+      if (event === 'PASSWORD_RECOVERY') {
+        setMode('recovery');
+        setMessage('Buat kata sandi baru untuk akunmu.');
+        setError(false);
+        setPassword('');
+        setConfirmPassword('');
+      } else if (
+        event === 'SIGNED_OUT' &&
+        mode === 'recovery'
+      ) {
+        setMode('login');
+        setMessage('Sesi pemulihan berakhir. Silakan minta tautan reset baru.');
+        setError(true);
+      }
+    });
+
+    // Menangani tautan pemulihan yang sudah membuka sesi saat halaman dimuat.
+    supabase.auth.getSession().then(({ data, error: sessionError }) => {
+      if (!active) return;
+
+      if (sessionError) {
+        setError(true);
+        setMessage('Tidak dapat memeriksa sesi. Buka kembali tautan pemulihan terbaru.');
+        return;
+      }
+
+      const url = new URL(window.location.href);
+      const hasRecoveryCode = url.searchParams.has('code');
+      const hash = new URLSearchParams(url.hash.replace(/^#/, ''));
+      const hasRecoveryToken =
+        hash.get('type') === 'recovery' ||
+        hash.has('access_token');
+
+      if (hasRecoveryCode || hasRecoveryToken) {
+        if (data.session) {
+          setMode('recovery');
+          setMessage('Buat kata sandi baru untuk akunmu.');
+          setError(false);
+        } else {
+          setError(true);
+          setMessage('Sesi pemulihan belum tersedia. Coba buka tautan terbaru dari email.');
+        }
+      }
+    });
+
+    return () => {
+      active = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  const changeMode = (nextMode: ScreenMode) => {
     setMode(nextMode);
     setMessage('');
     setError(false);
     setPassword('');
+    setConfirmPassword('');
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -36,7 +105,19 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onEnterApp }) => {
       return;
     }
 
-    if (mode !== 'reset' && password.length < 6) {
+    if (mode === 'recovery') {
+      if (password.length < 6) {
+        setError(true);
+        setMessage('Kata sandi minimal 6 karakter.');
+        return;
+      }
+
+      if (password !== confirmPassword) {
+        setError(true);
+        setMessage('Konfirmasi kata sandi tidak cocok.');
+        return;
+      }
+    } else if (mode !== 'reset' && password.length < 6) {
       setError(true);
       setMessage('Kata sandi minimal 6 karakter.');
       return;
@@ -47,13 +128,23 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onEnterApp }) => {
     try {
       if (mode === 'reset') {
         await resetPassword(email);
-        setMessage('Jika email terdaftar, tautan pemulihan akan dikirim. Periksa kotak masuk dan folder spam.');
-        setError(false);
+        setMessage(
+          'Jika email terdaftar, tautan pemulihan akan dikirim. Periksa kotak masuk dan folder spam.'
+        );
+      } else if (mode === 'recovery') {
+        await updatePassword(password);
+        await supabase.auth.signOut();
+        setPassword('');
+        setConfirmPassword('');
+        setMode('login');
+        setMessage('Kata sandi berhasil diperbarui. Silakan login dengan kata sandi baru.');
       } else if (mode === 'signup') {
         await signUpWithEmail(name, email, password);
         setPassword('');
         setMode('login');
-        setMessage('Pendaftaran berhasil. Jika diminta verifikasi email, verifikasi dahulu sebelum login.');
+        setMessage(
+          'Pendaftaran berhasil. Jika diminta verifikasi email, verifikasi dahulu sebelum login.'
+        );
       } else {
         await loginWithEmail(email, password);
         onEnterApp();
@@ -61,7 +152,9 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onEnterApp }) => {
     } catch (err) {
       setError(true);
       setMessage(
-        err instanceof Error ? err.message : 'Proses gagal. Silakan coba lagi.'
+        err instanceof Error
+          ? err.message
+          : 'Proses gagal. Silakan coba lagi.'
       );
     } finally {
       setLoading(false);
@@ -89,22 +182,25 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onEnterApp }) => {
           </p>
         </div>
 
-        <div className="relative w-36 h-36 sm:w-44 sm:h-44 my-3 flex items-center justify-center">
-          <div className="absolute inset-0 rounded-full bg-cyan-500/20 blur-2xl" />
-          <img
-            src="https://images.unsplash.com/photo-1579952363873-27f3bade9f55?auto=format&fit=crop&w=600&q=80"
-            alt="Bola sepak ARASHI"
-            className="relative w-full h-full object-cover rounded-full shadow-2xl border border-gray-700 grayscale contrast-125"
-          />
-        </div>
-
-        <h2 className="text-xl sm:text-2xl font-bold mt-3">More Than a Game</h2>
-        <p className="text-[10px] sm:text-xs font-semibold tracking-widest text-gray-400 uppercase mt-2">
-          FUTSAL • MINI SOCCER • ANTAR KAMPUNG
-        </p>
+        {mode !== 'recovery' && (
+          <>
+            <div className="relative w-36 h-36 sm:w-44 sm:h-44 my-3 flex items-center justify-center">
+              <div className="absolute inset-0 rounded-full bg-cyan-500/20 blur-2xl" />
+              <img
+                src="https://images.unsplash.com/photo-1579952363873-27f3bade9f55?auto=format&fit=crop&w=600&q=80"
+                alt="Bola sepak ARASHI"
+                className="relative w-full h-full object-cover rounded-full shadow-2xl border border-gray-700 grayscale contrast-125"
+              />
+            </div>
+            <h2 className="text-xl sm:text-2xl font-bold mt-3">More Than a Game</h2>
+            <p className="text-[10px] sm:text-xs font-semibold tracking-widest text-gray-400 uppercase mt-2">
+              FUTSAL • MINI SOCCER • ANTAR KAMPUNG
+            </p>
+          </>
+        )}
 
         <div className="w-full max-w-sm mt-8 text-left">
-          {mode !== 'reset' && (
+          {(mode === 'login' || mode === 'signup') && (
             <div className="grid grid-cols-2 gap-2 mb-4">
               <button
                 type="button"
@@ -118,7 +214,6 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onEnterApp }) => {
                 <LogIn className="w-4 h-4" />
                 Masuk
               </button>
-
               <button
                 type="button"
                 onClick={() => changeMode('signup')}
@@ -134,17 +229,25 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onEnterApp }) => {
             </div>
           )}
 
-          {mode === 'reset' && (
-            <div className="mb-4">
-              <h3 className="font-bold text-white flex items-center gap-2">
-                <KeyRound className="w-5 h-5" />
-                Lupa Kata Sandi
-              </h3>
+          <div className="mb-4">
+            <h3 className="font-bold text-white flex items-center gap-2">
+              <KeyRound className="w-5 h-5" />
+              {mode === 'recovery'
+                ? 'Buat Kata Sandi Baru'
+                : mode === 'reset'
+                  ? 'Lupa Kata Sandi'
+                  : mode === 'signup'
+                    ? 'Buat Akun'
+                    : 'Masuk Akun'}
+            </h3>
+            {(mode === 'reset' || mode === 'recovery') && (
               <p className="text-xs text-gray-400 mt-2">
-                Masukkan email akunmu. Kami akan mengirimkan tautan untuk membuat kata sandi baru.
+                {mode === 'recovery'
+                  ? 'Masukkan kata sandi baru minimal 6 karakter.'
+                  : 'Masukkan email akunmu. Kami akan mengirimkan tautan pemulihan.'}
               </p>
-            </div>
-          )}
+            )}
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-3">
             {mode === 'signup' && (
@@ -159,23 +262,38 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onEnterApp }) => {
               />
             )}
 
-            <input
-              type="email"
-              autoComplete="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="Alamat email"
-              required
-              className="w-full rounded-xl bg-gray-900 border border-gray-700 px-4 py-3 text-sm text-white outline-none focus:border-cyan-500"
-            />
+            {(mode === 'login' || mode === 'signup' || mode === 'reset') && (
+              <input
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="Alamat email"
+                required
+                className="w-full rounded-xl bg-gray-900 border border-gray-700 px-4 py-3 text-sm text-white outline-none focus:border-cyan-500"
+              />
+            )}
 
-            {mode !== 'reset' && (
+            {(mode === 'login' || mode === 'signup' || mode === 'recovery') && (
               <input
                 type="password"
-                autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder="Kata sandi (minimal 6 karakter)"
+                placeholder={mode === 'recovery' ? 'Kata sandi baru' : 'Kata sandi (minimal 6 karakter)'}
+                minLength={6}
+                required
+                className="w-full rounded-xl bg-gray-900 border border-gray-700 px-4 py-3 text-sm text-white outline-none focus:border-cyan-500"
+              />
+            )}
+
+            {mode === 'recovery' && (
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                placeholder="Ulangi kata sandi baru"
                 minLength={6}
                 required
                 className="w-full rounded-xl bg-gray-900 border border-gray-700 px-4 py-3 text-sm text-white outline-none focus:border-cyan-500"
@@ -198,7 +316,9 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onEnterApp }) => {
               <p
                 role="status"
                 className={`text-xs rounded-lg p-3 ${
-                  error ? 'bg-red-950 text-red-300' : 'bg-emerald-950 text-emerald-300'
+                  error
+                    ? 'bg-red-950 text-red-300'
+                    : 'bg-emerald-950 text-emerald-300'
                 }`}
               >
                 {message}
@@ -212,16 +332,18 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onEnterApp }) => {
             >
               {loading
                 ? 'Mohon tunggu...'
-                : mode === 'reset'
-                  ? 'Kirim Tautan Reset'
-                  : mode === 'login'
-                    ? 'Masuk ke SparringHub'
-                    : 'Buat Akun'}
+                : mode === 'recovery'
+                  ? 'Simpan Kata Sandi Baru'
+                  : mode === 'reset'
+                    ? 'Kirim Tautan Reset'
+                    : mode === 'login'
+                      ? 'Masuk ke SparringHub'
+                      : 'Buat Akun'}
               {!loading && <ArrowRight className="w-4 h-4" />}
             </button>
           </form>
 
-          {mode === 'reset' && (
+          {(mode === 'reset' || mode === 'recovery') && (
             <button
               type="button"
               onClick={() => changeMode('login')}
