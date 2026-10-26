@@ -8,7 +8,9 @@ import {
   MapPin, 
   FileText,
   CheckCircle,
-  Loader2
+  Loader2,
+  ExternalLink,
+  Navigation
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
@@ -27,6 +29,9 @@ export const CreateMatchScreen: React.FC<CreateMatchScreenProps> = ({ onBack, on
   const [title, setTitle] = useState('');
   const [dateTime, setDateTime] = useState('');
   const [location, setLocation] = useState('');
+  const [coordinates, setCoordinates] = useState<{ lat: number; lng: number } | null>(null);
+  const [locationMessage, setLocationMessage] = useState<string | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
   const [description, setDescription] = useState('');
   const [teamCount, setTeamCount] = useState<number>(1);
   const [level, setLevel] = useState('Bebas');
@@ -59,6 +64,49 @@ export const CreateMatchScreen: React.FC<CreateMatchScreenProps> = ({ onBack, on
   ];
 
   const currentTypeConfig = matchTypes.find((t) => t.id === selectedType)!;
+
+  const getLocalDateTime = () => {
+    const now = new Date();
+    const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 16);
+  };
+
+  const openGoogleMaps = () => {
+    const query = coordinates
+      ? `${coordinates.lat},${coordinates.lng}`
+      : location.trim();
+    if (!query) {
+      setLocationMessage('Pilih atau tulis lokasi lapangan terlebih dahulu.');
+      return;
+    }
+    window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`, '_blank', 'noopener,noreferrer');
+  };
+
+  const useCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationMessage('Browser ini tidak mendukung GPS. Silakan cari lokasi melalui Google Maps.');
+      return;
+    }
+    setIsLocating(true);
+    setLocationMessage('Meminta izin lokasi perangkat…');
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        setCoordinates({ lat, lng });
+        setLocation(`Lokasi GPS (${lat.toFixed(6)}, ${lng.toFixed(6)})`);
+        setLocationMessage('Koordinat GPS berhasil diambil. Tekan “Buka Google Maps” untuk melihat titiknya.');
+        setIsLocating(false);
+      },
+      (err) => {
+        setLocationMessage(err.code === err.PERMISSION_DENIED
+          ? 'Izin lokasi ditolak. Aktifkan izin lokasi untuk browser, atau cari lapangan lewat Google Maps.'
+          : 'Lokasi belum berhasil diambil. Pastikan GPS aktif dan coba lagi.');
+        setIsLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
+    );
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -188,11 +236,11 @@ export const CreateMatchScreen: React.FC<CreateMatchScreenProps> = ({ onBack, on
           </label>
           <div className="relative">
             <input
-              type="text"
-              placeholder="Pilih tanggal & waktu (Contoh: Besok, 19:00)"
+              type="datetime-local"
+              min={getLocalDateTime()}
               value={dateTime}
               onChange={(e) => setDateTime(e.target.value)}
-              className="w-full pl-11 pr-4 py-3 bg-[#131924] border border-gray-800 rounded-xl text-xs sm:text-sm text-white placeholder-gray-500 focus:outline-none focus:border-gray-500 transition-colors"
+              className="w-full pl-11 pr-4 py-3 bg-[#131924] border border-gray-800 rounded-xl text-xs sm:text-sm text-white placeholder-gray-500 focus:outline-none focus:border-gray-500 transition-colors [color-scheme:dark]"
               required
             />
             <Calendar className="w-4 h-4 text-gray-400 absolute left-4 top-3.5" />
@@ -209,12 +257,40 @@ export const CreateMatchScreen: React.FC<CreateMatchScreenProps> = ({ onBack, on
               type="text"
               placeholder="Pilih lokasi atau tulis manual"
               value={location}
-              onChange={(e) => setLocation(e.target.value)}
+              onChange={(e) => { setLocation(e.target.value); setCoordinates(null); setLocationMessage(null); }}
               className="w-full pl-11 pr-4 py-3 bg-[#131924] border border-gray-800 rounded-xl text-xs sm:text-sm text-white placeholder-gray-500 focus:outline-none focus:border-gray-500 transition-colors"
               required
             />
             <MapPin className="w-4 h-4 text-gray-400 absolute left-4 top-3.5" />
           </div>
+
+          <div className="grid grid-cols-2 gap-2 mt-2">
+            <button
+              type="button"
+              onClick={openGoogleMaps}
+              className="flex items-center justify-center gap-2 rounded-xl border border-blue-500/40 bg-blue-500/10 px-3 py-2.5 text-xs font-semibold text-blue-200"
+            >
+              <ExternalLink className="h-4 w-4" />
+              Buka Google Maps
+            </button>
+            <button
+              type="button"
+              onClick={useCurrentLocation}
+              disabled={isLocating}
+              className="flex items-center justify-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5 text-xs font-semibold text-emerald-200 disabled:opacity-50"
+            >
+              {isLocating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Navigation className="h-4 w-4" />}
+              {isLocating ? 'Mencari GPS…' : 'Gunakan Lokasi Saya'}
+            </button>
+          </div>
+          {locationMessage && (
+            <p className="mt-2 text-[11px] text-gray-300" role="status">{locationMessage}</p>
+          )}
+          {coordinates && (
+            <p className="mt-1 break-all text-[10px] text-emerald-300">
+              Koordinat: {coordinates.lat.toFixed(6)}, {coordinates.lng.toFixed(6)}
+            </p>
+          )}
 
           {/* Quick venue chips */}
           <div className="flex flex-wrap gap-1.5 mt-2">
@@ -222,7 +298,7 @@ export const CreateMatchScreen: React.FC<CreateMatchScreenProps> = ({ onBack, on
               <button
                 type="button"
                 key={v.id}
-                onClick={() => setLocation(v.name)}
+                onClick={() => { setLocation(v.name); setCoordinates(null); setLocationMessage(`${v.name} dipilih. Tekan “Buka Google Maps” untuk melihat lokasinya.`); }}
                 className="text-[10px] px-2 py-1 bg-gray-800/60 hover:bg-gray-800 text-gray-300 rounded-lg border border-gray-700/60 transition-colors"
               >
                 + {v.name}
