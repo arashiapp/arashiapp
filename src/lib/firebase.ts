@@ -1,8 +1,14 @@
+
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut as fbSignOut } from 'firebase/auth';
-import { 
-  getFirestore, 
-  doc, 
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut as fbSignOut,
+} from 'firebase/auth';
+import {
+  getFirestore,
+  doc,
   getDocFromServer,
   collection,
   onSnapshot,
@@ -14,13 +20,16 @@ import {
   query,
   orderBy,
   where,
-  limit
+  limit,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+
+// Gunakan database Firestore default pada project Firebase
+export const db = getFirestore(app);
+
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
@@ -50,7 +59,11 @@ export interface FirestoreErrorInfo {
   };
 }
 
-export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+export function handleFirestoreError(
+  error: unknown,
+  operationType: OperationType,
+  path: string | null
+) {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
@@ -59,29 +72,35 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
       emailVerified: auth.currentUser?.emailVerified,
       isAnonymous: auth.currentUser?.isAnonymous,
       tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData?.map(provider => ({
-        providerId: provider.providerId,
-        email: provider.email,
-      })) || []
+      providerInfo:
+        auth.currentUser?.providerData?.map((provider) => ({
+          providerId: provider.providerId,
+          email: provider.email,
+        })) || [],
     },
     operationType,
-    path
+    path,
   };
+
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Test connection on boot as mandated by skill
+// Test connection on boot
 export async function testFirestoreConnection() {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
-    console.log('Firebase Firestore connection tested successfully.');
+    console.log('Firestore connection tested successfully.');
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
+    if (
+      error instanceof Error &&
+      error.message.includes('the client is offline')
+    ) {
       console.warn('Firebase client is offline or initializing.');
     } else {
-      // Doc doesn't have to exist, reaching server is enough
-      console.log('Firestore reached server check.');
+      // Dokumen tidak harus ada; permintaan yang mencapai server
+      // tetap bisa menunjukkan bahwa server berhasil dijangkau.
+      console.log('Firestore server check completed.');
     }
   }
 }
