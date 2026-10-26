@@ -17,6 +17,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
   signUpWithEmail: (name: string, email: string, password: string) => Promise<void>;
   loginWithEmail: (email: string, password: string) => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -28,14 +29,14 @@ function profileFromData(
   email: string,
   data: Record<string, unknown>
 ): UserProfile {
-  const isAdmin = ADMIN_EMAILS.includes(email.toLowerCase());
+  const emailIsAdmin = ADMIN_EMAILS.includes(email.toLowerCase());
 
   return {
     uid: id,
     name: String(data.full_name || 'Pemain SparringHub'),
     email,
     phone: String(data.phone || ''),
-    role: isAdmin && data.role === 'admin' ? 'admin' : 'member',
+    role: emailIsAdmin && data.role === 'admin' ? 'admin' : 'member',
     avatarUrl: typeof data.avatar_url === 'string' ? data.avatar_url : undefined,
     createdAt: String(data.created_at || new Date().toISOString()),
   };
@@ -46,7 +47,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  
   const loadProfile = async (user: User | null) => {
     setAuthUser(user);
 
@@ -83,30 +83,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           });
 
         if (insertError) {
-          const { data: existingProfile, error: reloadError } =
-            await supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', user.id)
-              .maybeSingle();
+          const { data: existingProfile, error: reloadError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', user.id)
+            .maybeSingle();
 
           if (reloadError) throw reloadError;
           if (!existingProfile) throw insertError;
-
           profileData = existingProfile;
         } else {
-          const { data: newProfile, error: reloadError } =
-            await supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', user.id)
-              .maybeSingle();
+          const { data: newProfile, error: reloadError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', user.id)
+            .maybeSingle();
 
           if (reloadError) throw reloadError;
-          if (!newProfile) {
-            throw new Error('Profil belum tersedia setelah dibuat.');
-          }
-
+          if (!newProfile) throw new Error('Profil belum tersedia setelah dibuat.');
           profileData = newProfile;
         }
       }
@@ -125,7 +119,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     supabase.auth.getSession().then(({ data, error }) => {
       if (!active) return;
-
       if (error) console.error('Gagal memeriksa sesi:', error.message);
       void loadProfile(data.session?.user ?? null);
     });
@@ -142,7 +135,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      // Defer database access outside the auth callback.
       setTimeout(() => {
         if (active) void loadProfile(user);
       }, 0);
@@ -159,6 +151,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       email: email.trim(),
       password,
     });
+    if (error) throw error;
+  };
+
+  const resetPassword = async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(
+      email.trim(),
+      {
+        redirectTo: 'https://fastidious-longma-3d7733.netlify.app/',
+      }
+    );
+
     if (error) throw error;
   };
 
@@ -236,6 +239,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         signUpWithEmail,
         loginWithEmail,
+        resetPassword,
       }}
     >
       {children}
@@ -248,4 +252,3 @@ export const useAuth = () => {
   if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };
-              
